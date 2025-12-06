@@ -1,5 +1,11 @@
 # 🏨 Hotel Revenue Management System
 
+---
+
+## 📄 Project Report (Google Sheets)
+[![View Report](https://img.shields.io/badge/Google%20Sheets-View%20Report-brightgreen?style=for-the-badge&logo=google-sheets)](https://docs.google.com/spreadsheets/d/1g8DgmksUS14JKIfz7mcBXZr_1OhQry77/edit?usp=sharing&ouid=113295682545698250826&rtpof=true&sd=true)
+
+
 An interactive **Streamlit-based dashboard** for visualizing hotel booking trends and predicting revenue using Machine Learning (XGBoost). This project empowers hoteliers and analysts to make smarter, data-driven decisions with real-time insights.
 
 ---
