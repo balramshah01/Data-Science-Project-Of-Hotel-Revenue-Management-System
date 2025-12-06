@@ -10,6 +10,13 @@ An interactive **Streamlit-based dashboard** for visualizing hotel booking trend
 
 ---
 
+## 🚀 Live App
+
+👉 [Launch the Hotel Revenue WebApp]( https://balramshah-hotel-webapp.streamlit.app)
+
+---
+
+
 ## 📌 Project Summary
 
 This dashboard was developed as part of an internship at **HCL Technologies**. It allows users to:
@@ -29,15 +36,6 @@ This dashboard was developed as part of an internship at **HCL Technologies**. I
 
 ### 🧮 Prediction Section
 ![Screenshot 2025-04-28 154704](https://github.com/user-attachments/assets/1a3a735d-7aea-4414-b806-c89ce3f2db2f)
-
-
-> *(Make sure to place your actual screenshots in a `screenshots/` folder in the repo)*
-
----
-
-## 🚀 Live App
-
-👉 [Launch the Hotel Revenue WebApp]( https://balramshah-hotel-webapp.streamlit.app)
 
 ---
 
