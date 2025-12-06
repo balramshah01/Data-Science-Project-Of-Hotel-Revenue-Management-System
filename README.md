@@ -63,3 +63,10 @@ This dashboard was developed as part of an internship at **HCL Technologies**. I
 
 ---
 
+📬 Contact
+If you'd like to learn more or collaborate, feel free to reach out:
+
+📧 Email: sawmar044@gmail.com
+
+🔗 LinkedIn: https://www.linkedin.com/in/balram-shah
+
