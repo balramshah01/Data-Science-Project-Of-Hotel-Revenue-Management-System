@@ -5,41 +5,71 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import joblib
 import sqlite3
+import os
 from datetime import datetime
 
-# --- PAGE CONFIG ---
+# ---------------------------- PAGE CONFIG ----------------------------
 st.set_page_config(page_title="Hotel Revenue Dashboard", layout="wide")
 
-# --- LOAD DATA ---
+# ---------------------------- DATABASE PATH --------------------------
+def get_db_connection():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # Script folder
+    except:
+        base_dir = os.getcwd()                                 # Streamlit Cloud fallback
+
+    db_path = os.path.join(base_dir, "hotel_revenue.db")
+    return sqlite3.connect(db_path)
+
+# ---------------------------- LOAD DATA ------------------------------
 @st.cache_data
 def load_data():
-    conn = sqlite3.connect('hotel_revenue.db')  # Connect to SQLite DB
-    df = pd.read_sql_query("SELECT * FROM hotel_data", conn)  # Read hotel_data table
-    df['checkin_date'] = pd.to_datetime(df['checkin_date'])
+    conn = get_db_connection()
+
+    try:
+        df = pd.read_sql_query("SELECT * FROM hotel_data", conn)
+    except Exception as e:
+        st.error(f"❌ Database Error: {e}")
+        st.stop()
+
+    # Safe date conversion
+    if "checkin_date" in df.columns:
+        df["checkin_date"] = pd.to_datetime(df["checkin_date"], errors="coerce")
+
     conn.close()
     return df
 
 df = load_data()
 
-# --- CUSTOM TITLE ---
-st.markdown("<div style='text-align: center; font-size: 40px; font-weight: 900; color: #768b45;'>🏨 Hotel Revenue Management Dashboard</div>", unsafe_allow_html=True)
-st.markdown("<div style='text-align: center; font-size: 18px; color: #eec76b;'>Created by Balram Shah | Internship Project at HCL Tech</div>", unsafe_allow_html=True)
+# ---------------------------- TITLES --------------------------------
+st.markdown("""
+<div style='text-align:center; font-size:40px; font-weight:900; color:#768b45;'>
+🏨 Hotel Revenue Management Dashboard
+</div>
+""", unsafe_allow_html=True)
 
-# --- SIDEBAR FILTERS ---
+st.markdown("""
+<div style='text-align:center; font-size:18px; color:#eec76b;'>
+Created by Balram Shah | Internship Project at HCL Tech
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------- SIDEBAR FILTERS ------------------------
 st.sidebar.header("📊 Filter Options")
 
 st.sidebar.markdown("""
 ### 🧾 About This Dashboard
 
-The **Hotel Revenue Dashboard** is an interactive tool to visualize hotel booking trends and predict future revenue using machine learning. It helps hotel managers:
+The **Hotel Revenue Dashboard** visualizes booking trends and predicts
+future revenue using machine learning.  
+It helps hotel managers:
 
-- 📊 Analyze room demand and customer behavior
-- 🤖 Predict revenue using real booking inputs
-- 📈 Optimize pricing and booking strategies
-
+- 📊 Analyze demand & customer behavior  
+- 🤖 Predict revenue  
+- 📈 Optimize booking strategies  
 """)
 
-room_types = df['room_type'].unique()
+room_types = sorted(df['room_type'].unique())
 selected_rooms = st.sidebar.multiselect("Room Type", room_types, default=room_types)
 
 months = sorted(df['booking_month'].unique())
@@ -52,15 +82,20 @@ min_date = df['checkin_date'].min().date()
 max_date = df['checkin_date'].max().date()
 selected_dates = st.sidebar.date_input("Check-in Date Range", [min_date, max_date])
 
+# Prevent single date error
+if len(selected_dates) != 2:
+    st.warning("Please select a start and end date.")
+    st.stop()
+
 status_filter = st.sidebar.radio("Booking Status", ["All", "Only Canceled", "Only Completed"])
 
+# ---------------------------- APPLY FILTERS --------------------------
 filtered_df = df[
     (df['room_type'].isin(selected_rooms)) &
     (df['booking_month'].isin(selected_months)) &
-    (df['booking_lead_time'] >= lead_range[0]) &
-    (df['booking_lead_time'] <= lead_range[1]) &
-    (df['checkin_date'] >= pd.to_datetime(selected_dates[0])) &
-    (df['checkin_date'] <= pd.to_datetime(selected_dates[1]))
+    (df['booking_lead_time'].between(lead_range[0], lead_range[1])) &
+    (df['checkin_date'].between(pd.to_datetime(selected_dates[0]),
+                                pd.to_datetime(selected_dates[1])))
 ]
 
 if status_filter == "Only Canceled":
@@ -68,66 +103,87 @@ if status_filter == "Only Canceled":
 elif status_filter == "Only Completed":
     filtered_df = filtered_df[filtered_df['cancellation_flag'] == 0]
 
-# --- KPIs ---
+# ---------------------------- KPI METRICS ----------------------------
 st.markdown("### 📌 Key Metrics")
+
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Bookings", len(filtered_df))
 col2.metric("Total Revenue", f"${filtered_df['total_revenue'].sum():,.2f}")
 col3.metric("Avg Daily Rate", f"${filtered_df['avg_daily_rate'].mean():.2f}")
 
-# --- CHARTS ---
+# ---------------------------- INSIGHTS -------------------------------
 st.markdown("## 📊 Insights & ML Results")
 theme = "plotly_white"
 
+df_time = filtered_df.set_index("checkin_date")
+
+# Revenue Trend
 with st.expander("📈 Revenue Trend Over Time"):
-    df_time = df.set_index("checkin_date")
-    fig = px.line(df_time.resample('M').sum().reset_index(), x='checkin_date', y='total_revenue',
+    monthly = df_time.resample('M').sum().reset_index()
+    fig = px.line(monthly, x='checkin_date', y='total_revenue',
                   title="Monthly Revenue Trend", template=theme)
     st.plotly_chart(fig, use_container_width=True)
 
+# Pricing Comparison
 with st.expander("💲 Hotel vs Competitor Pricing"):
     comp = df_time[['room_price', 'competitor_price']].resample('M').mean().reset_index()
     fig = px.line(comp, x='checkin_date', y=['room_price', 'competitor_price'],
                   title="Hotel vs Competitor Price", template=theme)
     st.plotly_chart(fig, use_container_width=True)
 
+# Revenue by Segment
 with st.expander("👥 Revenue by Customer Segment"):
     fig, ax = plt.subplots(figsize=(20, 6))
-    sns.boxplot(data=df, x='customer_segment', y='total_revenue', palette='Set2', ax=ax)
+    sns.boxplot(data=filtered_df, x='customer_segment', y='total_revenue', ax=ax)
     ax.set_title("Revenue by Customer Segment")
     st.pyplot(fig)
 
+# Price vs Occupancy
 with st.expander("📊 Room Price vs Occupancy"):
-    fig = px.scatter(df, x='room_price', y='occupancy_rate', color='room_type', template=theme,
-                     title="Price vs Occupancy Rate", width=800, height=400)
+    fig = px.scatter(filtered_df, x='room_price', y='occupancy_rate',
+                     color='room_type', template=theme,
+                     title="Price vs Occupancy Rate")
     st.plotly_chart(fig, use_container_width=True)
 
+# ADR by Month
 with st.expander("🕵️‍♂️ Avg Daily Rate by Month"):
-    adr = df.groupby("booking_month")["avg_daily_rate"].mean().reset_index()
-    fig = px.bar(adr, x="booking_month", y="avg_daily_rate", text_auto=True, template=theme,
-                 color="avg_daily_rate", color_continuous_scale="Viridis")
+    adr = filtered_df.groupby("booking_month")["avg_daily_rate"].mean().reset_index()
+    fig = px.bar(adr, x="booking_month", y="avg_daily_rate",
+                 template=theme, text_auto=True)
     st.plotly_chart(fig, use_container_width=True)
 
+# Revenue by Room Type
 with st.expander("🏯 Revenue by Room Type"):
-    fig = px.pie(df, names='room_type', values='total_revenue', template=theme,
-                 title='Revenue Contribution by Room Type')
+    pie_df = filtered_df[filtered_df["total_revenue"] > 0]
+    fig = px.pie(pie_df, names='room_type', values='total_revenue',
+                 title='Revenue Contribution by Room Type', template=theme)
     st.plotly_chart(fig, use_container_width=True)
 
+# Lead Time Distribution
 with st.expander("📈 Booking Lead Time Distribution"):
     fig, ax = plt.subplots(figsize=(20, 5))
-    sns.histplot(df['booking_lead_time'], kde=True, ax=ax, color='skyblue')
+    sns.histplot(filtered_df['booking_lead_time'], kde=True, ax=ax)
     ax.set_title("Lead Time Distribution")
     st.pyplot(fig)
 
+# Cancellation
 with st.expander("❌ Cancellation Rate by Segment"):
-    cancel_seg = df.groupby('customer_segment')['cancellation_flag'].mean().reset_index()
+    cancel_seg = filtered_df.groupby('customer_segment')['cancellation_flag'].mean().reset_index()
     fig = px.bar(cancel_seg, x='customer_segment', y='cancellation_flag',
                  title='Cancellation % by Segment', template=theme)
     st.plotly_chart(fig, use_container_width=True)
 
-# --- ML Prediction ---
+# ---------------------------- ML PREDICTION --------------------------
 with st.expander("🤖 Predict Revenue (ML Model)", expanded=False):
+
+    @st.cache_resource
+    def load_model():
+        return joblib.load("xgb_hotel_model.pkl")
+
+    model = load_model()
+
     st.markdown("Enter details below to predict expected revenue.")
+
     with st.form("prediction_form"):
         cols = st.columns(4)
         room_type = cols[0].selectbox("Room Type", ['Deluxe', 'Double', 'Single', 'Suite'])
@@ -142,7 +198,8 @@ with st.expander("🤖 Predict Revenue (ML Model)", expanded=False):
         season = cols[3].selectbox("Season", ['Spring', 'Summer', 'Autumn', 'Winter'])
 
         cols = st.columns(4)
-        day_of_week = cols[0].selectbox("Day of Week", ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+        day_of_week = cols[0].selectbox("Day of Week", 
+                        ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
         event_type = cols[1].selectbox("Event Type", ['None', 'Conference', 'Festival', 'Exhibition'])
         competitor_price = cols[2].number_input("Competitor Price ($)", 50.0, 1000.0)
         cancellation_flag = cols[3].selectbox("Cancelled?", [0, 1])
@@ -154,7 +211,6 @@ with st.expander("🤖 Predict Revenue (ML Model)", expanded=False):
         holiday_season = cols[3].selectbox("Holiday Season", [0, 1])
 
         cols = st.columns(4)
-        final_price = room_price * (occupancy_rate / 100)
         marketing_spend = cols[0].number_input("Marketing Spend ($)", 0.0, 10000.0, 200.0)
         customer_feedback = cols[1].selectbox("Customer Feedback", ['Negative', 'Neutral', 'Positive'])
         special_event = cols[2].selectbox("Special Event", [0, 1])
@@ -162,16 +218,18 @@ with st.expander("🤖 Predict Revenue (ML Model)", expanded=False):
 
         avg_daily_rate = st.number_input("Avg Daily Rate ($)", 50.0, 1000.0)
 
+        final_price = room_price - discount_applied
+
         submitted = st.form_submit_button("Predict Revenue")
 
     if submitted:
-        model = joblib.load("xgb_hotel_model.pkl")
-
+        # Encoding maps
         room_map = {'Deluxe': 0, 'Double': 1, 'Single': 2, 'Suite': 3}
         segment_map = {'Business': 0, 'Group': 1, 'Leisure': 2, 'Solo': 3}
         payment_map = {'Cash': 0, 'Online': 1, 'Credit Card': 2}
         season_map = {'Spring': 0, 'Summer': 1, 'Autumn': 2, 'Winter': 3}
-        day_map = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
+        day_map = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3,
+                   'Friday': 4, 'Saturday': 5, 'Sunday': 6}
         event_map = {'None': 0, 'Conference': 1, 'Festival': 2, 'Exhibition': 3}
         feedback_map = {'Negative': 0, 'Neutral': 1, 'Positive': 2}
         services_map = {'None': -1, 'Spa': 0, 'Breakfast': 1, 'Dinner': 2, 'All': 3}
@@ -203,17 +261,23 @@ with st.expander("🤖 Predict Revenue (ML Model)", expanded=False):
         })
 
         st.write("📋 Model Input Data:", input_data)
+
         predicted_revenue = model.predict(input_data)[0]
         st.success(f"✅ Predicted Revenue: ${predicted_revenue:,.2f}")
 
-# --- Data Preview ---
+# ---------------------------- DATA PREVIEW ---------------------------
 st.markdown("---")
 st.markdown("📂 Filtered Data Preview")
 st.dataframe(filtered_df)
 
-# --- Download Button ---
-st.sidebar.download_button("⬇️ Download Filtered Data", data=filtered_df.to_csv(index=False).encode('utf-8'), file_name="filtered_data.csv")
+# ---------------------------- DOWNLOAD CSV ---------------------------
+st.sidebar.download_button(
+    "⬇️ Download Filtered Data",
+    data=filtered_df.to_csv(index=False).encode('utf-8-sig'),
+    file_name="filtered_data.csv"
+)
 
-# --- Footer ---
+# ---------------------------- FOOTER --------------------------------
 st.markdown("---")
 st.markdown("© 2025 | Created by Balram Shah | Powered by Streamlit")
+
